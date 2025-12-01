@@ -2,7 +2,7 @@ name: 多仓库资产同步与发布
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'  # 可选：每天凌晨运行
+    - cron: '0 */11 * * *'  # 每1小时运行一次
 
 jobs:
   sync-and-release:
