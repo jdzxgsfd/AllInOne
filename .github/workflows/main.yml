@@ -396,7 +396,7 @@ jobs:
               $createReleaseBody = @{
                 tag_name = $tag
                 name = $title
-                body = "自动发布的资产"
+                body = "Auto publish assets"
                 draft = $false
                 prerelease = $false
               } | ConvertTo-Json
