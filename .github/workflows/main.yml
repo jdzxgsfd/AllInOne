@@ -263,7 +263,8 @@ jobs:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           CURRENT_REPO_FULL_NAME: ${{ github.repository }}
         run: |
-          $subFolders = @("SoftwareDownloader.Postman.MacOS.arm64", "SoftwareDownloader.Postman.MacOS64")
+          # 从环境变量读取目录列表（替代硬编码）
+          $subFolders = $env:SUB_FOLDERS | ConvertFrom-Json
           $currentRepoFullName = $env:CURRENT_REPO_FULL_NAME
           $githubUsername = $currentRepoFullName -split '/' | Select-Object -First 1
           Write-Host "当前 workflow 所属账号: $githubUsername"
