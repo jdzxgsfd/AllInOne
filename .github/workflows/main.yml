@@ -408,10 +408,6 @@ jobs:
              #######################################
              # ========== 新增：输出HEX格式，定位不可见字符 ==========
              Write-Host "原始upload_url: $($release.upload_url)"
-             # 转换为HEX格式输出
-             $rawBytes = [System.Text.Encoding]::UTF8.GetBytes($release.upload_url)
-             $hexString = -join ($rawBytes | ForEach-Object { $_.ToString("X2") })
-             Write-Host "原始upload_url的HEX编码: $hexString"
              
              # ========== 强化URL清理逻辑 ==========
              # 1. 彻底清理所有非URL合法字符（仅保留字母、数字、:/.-?&=）
@@ -430,9 +426,6 @@ jobs:
              Write-Host "移除首尾空白不可见字符cleanUploadUrl: $cleanUploadUrl" 
              # 4. 输出清理后的结果和HEX
              Write-Host "清理后的upload_url: $cleanUploadUrl"
-             $cleanBytes = [System.Text.Encoding]::UTF8.GetBytes($cleanUploadUrl)
-             $cleanHexString = -join ($cleanBytes | ForEach-Object { $_.ToString("X2") })
-             Write-Host "清理后的upload_url的HEX编码: $cleanHexString"
              
              # 5. 兜底拼接标准URL（最终保障）
              if (-not [Uri]::IsWellFormedUriString($cleanUploadUrl, [UriKind]::Absolute)) {
@@ -459,12 +452,9 @@ jobs:
                  # 安全拼接：确保URL后无多余字符，再拼接参数
                  $finalUploadUri = [System.Uri]::new($uploadUrl).AbsoluteUri + "?name=$([Uri]::EscapeDataString($asset.Name))"
                  Write-Host "最终上传URI: $finalUploadUri"
-                 $finalBytes = [System.Text.Encoding]::UTF8.GetBytes($finalUploadUri)
-                 $finalHexString = -join ($finalBytes | ForEach-Object { $_.ToString("X2") })
-                 Write-Host "最终上传URI的HEX编码: $finalHexString"
                  
                  if (-not [Uri]::IsWellFormedUriString($finalUploadUri, [UriKind]::Absolute)) {
-                     throw "无效的上传URI（HEX：$finalHexString）: $finalUploadUri"
+                     throw "无效的上传URI: $finalUploadUri"
                  }
                  
                  Invoke-RestMethod -Uri $finalUploadUri `
