@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 */6 * * *'  # 每6小时运行一次
 
+# 关键：固定并发组名为仓库标识，确保所有实例同属一组
+concurrency:
+  group: ${{ github.repository }}  # 用仓库名作为全局唯一并发组（如 "owner/repo"）
+  cancel-in-progress: false  # 新实例等待旧实例完成，不取消正在运行的
+
 jobs:
   sync-and-release:
     runs-on: windows-latest  # 必须使用 Windows 环境运行 .NET Framework 程序
