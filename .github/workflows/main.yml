@@ -123,40 +123,94 @@ jobs:
           
           foreach ($repo in $subFolders) {
             $outputPath = "./all/$repo/Exist.txt"
-            Write-Host "正在获取仓库 $githubUsername/$repo 的发布标签..."
+            Write-Host "正在获取仓库 $githubUsername/$repo 的所有标签..."
             
             try {
-              # 调用 GitHub API 获取仓库所有发布（包含标签）
-              $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$githubUsername/$repo/releases" `
-                -Headers @{
-                  "Authorization" = "token $token"
-                  "Accept" = "application/vnd.github.v3+json"
-                } `
-                -Method Get `
-                -ErrorAction Stop
-              
-              # 提取标签并去重（按发布时间倒序排列）
-              $tags = $releases.tag_name | Select-Object -Unique | Sort-Object -Descending
-              
-              # 写入 Exist.txt（不存在则新建，存在则覆盖）
-              $tags | Out-File -FilePath $outputPath -Encoding utf8
-              Write-Host "成功写入 $($tags.Count) 个标签到 $outputPath"
+                # ========== 步骤1：获取仓库所有标签（含纯标签+Release标签） ==========
+                $allTags = @()
+                $page = 1
+                $perPage = 100  # 每页最多100条（API上限）
+                do {
+                    $tagsUri = "https://api.github.com/repos/$githubUsername/$repo/tags?page=$page&per_page=$perPage"
+                    Write-Host "请求标签列表：$tagsUri"
+                    
+                    $tagsResponse = Invoke-RestMethod -Uri $tagsUri `
+                        -Headers @{
+                            "Authorization" = "token $token"
+                            "Accept" = "application/vnd.github.v3+json"
+                        } `
+                        -Method Get `
+                        -ErrorAction Stop
+                    
+                    if ($tagsResponse.Count -eq 0) { break }  # 无更多标签则退出循环
+                    
+                    # 提取标签名（tags API 返回的是对象，tag_name 在 name 字段）
+                    $pageTags = $tagsResponse | Select-Object -ExpandProperty name
+                    $allTags += $pageTags
+                    $page++
+                } while ($tagsResponse.Count -eq $perPage)  # 直到返回条数不足一页
+                
+                # ========== 步骤2（可选）：获取Release标签（用于对比/补充） ==========
+                $releaseTags = @()
+                $page = 1
+                do {
+                    $releasesUri = "https://api.github.com/repos/$githubUsername/$repo/releases?page=$page&per_page=$perPage"
+                    $releasesResponse = Invoke-RestMethod -Uri $releasesUri `
+                        -Headers @{
+                            "Authorization" = "token $token"
+                            "Accept" = "application/vnd.github.v3+json"
+                        } `
+                        -Method Get `
+                        -ErrorAction Stop
+                    
+                    if ($releasesResponse.Count -eq 0) { break }
+                    
+                    $pageReleaseTags = $releasesResponse | Select-Object -ExpandProperty tag_name
+                    $releaseTags += $pageReleaseTags
+                    $page++
+                } while ($releasesResponse.Count -eq $perPage)
+                
+                # ========== 步骤3：整合标签（去重+倒序） ==========
+                # 优先用全量标签，若需要仅保留有Release的标签，可替换为 $releaseTags
+                $finalTags = $allTags | Select-Object -Unique | Sort-Object -Descending
+                
+                # ========== 步骤4：写入文件 ==========
+                $finalTags | Out-File -FilePath $outputPath -Encoding utf8
+                Write-Host "✅ 成功获取 $($finalTags.Count) 个标签（含纯标签+Release标签），写入 $outputPath"
+                if ($allTags.Count -ne $releaseTags.Count) {
+                    Write-Host "ℹ️ 提示：仓库有 $($allTags.Count - $releaseTags.Count) 个标签未关联Release"
+                }
             }
             catch {
-              $statusCode = $_.Exception.Response.StatusCode.value__
-              if ($statusCode -eq 404) {
-                Write-Warning "仓库 $githubUsername/$repo 不存在，创建空的 Exist.txt"
-              }
-              elseif ($statusCode -eq 403) {
-                Write-Warning "❌ 权限不足：无法访问仓库 $githubUsername/$repo，请检查 PAT 令牌权限"
-                exit 1  # 权限错误直接终止，避免无效执行
-              }
-              else {
-                Write-Warning "获取标签失败：$($_.Exception.Message)，创建空的 Exist.txt"
-              }
-              New-Item -Path $outputPath -ItemType File -Force | Out-Null
+                $statusCode = $_.Exception.Response.StatusCode.value__
+                $errorMsg = $_.Exception.Message
+                switch ($statusCode) {
+                    404 {
+                        Write-Warning "⚠️ 仓库 $githubUsername/$repo 不存在，创建空的 Exist.txt"
+                    }
+                    403 {
+                        Write-Warning "❌ 权限不足：无法访问仓库 $githubUsername/$repo（StatusCode:403），请检查PAT权限："
+                        Write-Warning "   - PAT需包含 repo 权限（至少 repo:public_repo 或 repo 范围）"
+                        Write-Warning "   - 确认仓库不是私有仓库（私有仓库需 repo 完整权限）"
+                        exit 1  # 权限错误终止执行
+                    }
+                    401 {
+                        Write-Warning "❌ 认证失败：PAT令牌无效或已过期（StatusCode:401）"
+                        exit 1
+                    }
+                    429 {
+                        Write-Warning "❌ API请求限流（StatusCode:429），请等待60秒后重试，或提升API限流额度"
+                        Start-Sleep -Seconds 60
+                        continue  # 重试当前仓库
+                    }
+                    default {
+                        Write-Warning "⚠️ 获取标签失败（StatusCode:$statusCode）：$errorMsg，创建空的 Exist.txt"
+                    }
+                }
+                # 确保文件存在（空文件）
+                New-Item -Path $outputPath -ItemType File -Force | Out-Null
             }
-          }
+          }         
 
       # ========== 核心调整：新增第三步-提前创建缺失的仓库 ==========
       - name: 步骤3-提前创建缺失的公共仓库
